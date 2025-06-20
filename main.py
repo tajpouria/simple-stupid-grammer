@@ -10,20 +10,21 @@ import time
 import json
 import sys
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import keyboard
 import pyperclip
 import pyautogui
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
 import pystray
 from PIL import Image, ImageDraw
 import io
+import keyring
 
-load_dotenv()
 
-client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+# Application constants
+SERVICE_NAME = "SimpleStupidGrammar"
+CREDENTIAL_NAME = "GoogleAPIKey"
 
 # Try different hotkey combinations if ctrl+alt+0 doesn't work:
 # KEYBOARD_HOTKEY = "ctrl+shift+g"  # Alternative 1
@@ -39,6 +40,19 @@ PROMPT = "Make the following text grammatically correct: "
 class SimpleStupidGrammar:
     def __init__(self):
         try:
+            print("Starting app initialization...")
+            # Get Google API key before initializing the client
+            api_key = self.get_google_api_key()
+            print(f"Got API key: {'Yes' if api_key else 'No'}")
+            if not api_key:
+                print("ERROR: No Google API key provided!")
+                sys.exit(1)
+            
+            # Initialize the client with the API key
+            global client
+            client = genai.Client(api_key=api_key)
+            print("Client initialized successfully")
+            
             self.root = tk.Tk()
             self.setup_ui()
             self.is_running = False
@@ -60,6 +74,97 @@ class SimpleStupidGrammar:
             import traceback
             traceback.print_exc()
             raise
+
+    def get_google_api_key(self):
+        """Get Google API key from stored credentials or user input"""
+        print("get_google_api_key called")
+        try:
+            # First, try to get from stored credentials
+            print("Checking stored credentials...")
+            stored_key = keyring.get_password(SERVICE_NAME, CREDENTIAL_NAME)
+            if stored_key:
+                print("Found stored key")
+                return stored_key
+            
+            print("No stored key found, prompting user...")
+            # If no stored key, prompt user for the key
+            return self.prompt_for_api_key()
+            
+        except Exception as e:
+            print(f"Error getting API key: {str(e)}")
+            return self.prompt_for_api_key()
+
+    def prompt_for_api_key(self):
+        """Prompt user for Google API key using a dialog"""
+        try:
+            # Create a temporary root window for the dialog if main window doesn't exist yet
+            if not hasattr(self, 'root') or not self.root:
+                temp_root = tk.Tk()
+                temp_root.withdraw()  # Hide the temp window
+                parent = temp_root
+            else:
+                parent = self.root
+            
+            # Show dialog to get API key
+            api_key = simpledialog.askstring(
+                "Google API Key Required",
+                "Please enter your Google API Key:\n\n"
+                "You can get one from:\n"
+                "https://aistudio.google.com/app/apikey\n\n"
+                "Enter your API key:",
+                parent=parent,
+                show='*'  # Hide the input like a password
+            )
+            
+            if api_key and api_key.strip():
+                api_key = api_key.strip()
+                # Store the key securely
+                try:
+                    keyring.set_password(SERVICE_NAME, CREDENTIAL_NAME, api_key)
+                    messagebox.showinfo(
+                        "Success", 
+                        "API key saved successfully!\n"
+                        "The app will remember this key for future use.",
+                        parent=parent
+                    )
+                except Exception as e:
+                    messagebox.showwarning(
+                        "Warning", 
+                        f"API key will be used but couldn't be saved: {str(e)}\n"
+                        "You may need to enter it again next time.",
+                        parent=parent
+                    )
+                
+                # Clean up temp window if we created one
+                if not hasattr(self, 'root') or not self.root:
+                    temp_root.destroy()
+                
+                return api_key
+            else:
+                # Clean up temp window if we created one
+                if not hasattr(self, 'root') or not self.root:
+                    temp_root.destroy()
+                
+                # User cancelled or entered empty key
+                messagebox.showerror(
+                    "Error", 
+                    "Google API key is required for the app to work!\n"
+                    "Please restart the app and provide a valid API key.",
+                    parent=parent if hasattr(self, 'root') and self.root else None
+                )
+                return None
+                
+        except Exception as e:
+            print(f"Error prompting for API key: {str(e)}")
+            return None
+
+    def reset_api_key(self):
+        """Reset the stored API key (for testing or changing keys)"""
+        try:
+            keyring.delete_password(SERVICE_NAME, CREDENTIAL_NAME)
+            messagebox.showinfo("Success", "API key has been reset.\nRestart the app to enter a new one.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to reset API key: {str(e)}")
 
     def create_tray_icon(self):
         """Create a simple icon for the system tray"""
@@ -86,6 +191,7 @@ class SimpleStupidGrammar:
             pystray.MenuItem("Show Window", self.show_window),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Restart Monitoring", self.restart_monitoring),
+            pystray.MenuItem("Reset API Key", self.reset_api_key),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Exit", self.quit_app)
         )
@@ -112,7 +218,7 @@ class SimpleStupidGrammar:
     def setup_ui(self):
         """Setup the application UI"""
         self.root.title("Simple Stupid Grammar")
-        self.root.geometry("500x300")
+        self.root.geometry("600x600")
         self.root.resizable(True, True)
         
         # Set window icon (optional)
@@ -373,15 +479,6 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
 
 if __name__ == "__main__":
     try:
-        # Check if Google API key is available
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            print("ERROR: GOOGLE_API_KEY not found in environment variables!")
-            print("Please create a .env file with your Google API key:")
-            print("GOOGLE_API_KEY=your_api_key_here")
-            input("Press Enter to exit...")
-            sys.exit(1)
-            
         app = SimpleStupidGrammar()
         app.run()
     except KeyboardInterrupt:
