@@ -40,7 +40,6 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("grammar_app.log", encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )
@@ -52,6 +51,8 @@ class SimpleStupidGrammar:
         self.setup_ui()
         self.is_running = False
         self.hotkey_thread = None
+        # Auto-start monitoring
+        self.root.after(100, self.start_monitoring)
 
     def setup_ui(self):
         """Setup the application UI"""
@@ -76,7 +77,7 @@ class SimpleStupidGrammar:
         )
 
         self.status_label = ttk.Label(
-            status_frame, text="Stopped", foreground="red", font=("Arial", 12, "bold")
+            status_frame, text="Starting...", foreground="orange", font=("Arial", 12, "bold")
         )
         self.status_label.grid(row=0, column=0)
 
@@ -84,18 +85,10 @@ class SimpleStupidGrammar:
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=2, column=0, columnspan=2, pady=(0, 20))
 
-        self.start_button = ttk.Button(
-            button_frame, text="Start Monitoring", command=self.start_monitoring
+        self.restart_button = ttk.Button(
+            button_frame, text="Restart Monitoring", command=self.restart_monitoring
         )
-        self.start_button.grid(row=0, column=0, padx=(0, 10))
-
-        self.stop_button = ttk.Button(
-            button_frame,
-            text="Stop Monitoring",
-            command=self.stop_monitoring,
-            state="disabled",
-        )
-        self.stop_button.grid(row=0, column=1)
+        self.restart_button.grid(row=0, column=0)
 
         # Instructions
         instructions_frame = ttk.LabelFrame(
@@ -106,10 +99,11 @@ class SimpleStupidGrammar:
         )
 
         instructions_text = f"""How to use:
-1. Click 'Start Monitoring' to begin
+1. App starts monitoring automatically
 2. Highlight any text anywhere on your computer
 3. Press {KEYBOARD_HOTKEY} to fix grammar
 4. The highlighted text will be replaced with corrected version
+5. Use 'Restart Monitoring' to reset if needed
 
 Current hotkey: {KEYBOARD_HOTKEY}"""
 
@@ -139,10 +133,11 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def log_message(self, message):
-        """Add message to both log file and UI"""
+        """Add message to UI log"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         formatted_message = f"[{timestamp}] {message}"
 
+        # Log to console
         logging.info(message)
 
         # Update UI log
@@ -156,8 +151,7 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
             return
 
         self.is_running = True
-        self.start_button.config(state="disabled")
-        self.stop_button.config(state="normal")
+        self.restart_button.config(state="disabled")
         self.status_label.config(text="Running", foreground="green")
 
         self.log_message(f"Started monitoring for {KEYBOARD_HOTKEY}")
@@ -166,14 +160,19 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         self.hotkey_thread = threading.Thread(target=self.monitor_hotkey, daemon=True)
         self.hotkey_thread.start()
 
+    def restart_monitoring(self):
+        """Restart the hotkey monitoring"""
+        if self.is_running:
+            self.stop_monitoring()
+        self.start_monitoring()
+
     def stop_monitoring(self):
         """Stop the hotkey monitoring"""
         if not self.is_running:
             return
 
         self.is_running = False
-        self.start_button.config(state="normal")
-        self.stop_button.config(state="disabled")
+        self.restart_button.config(state="normal")
         self.status_label.config(text="Stopped", foreground="red")
 
         self.log_message("Stopped monitoring")
@@ -288,7 +287,7 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
     def run(self):
         """Start the application"""
         self.log_message("Simple Stupid Grammar started")
-        self.log_message("Click 'Start Monitoring' to begin")
+        self.log_message("Monitoring will start automatically...")
         self.root.mainloop()
 
 
