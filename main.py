@@ -12,13 +12,16 @@ import sys
 import logging
 from datetime import datetime
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+from tkinter import ttk, scrolledtext, messagebox
 import keyboard
 import pyperclip
 import pyautogui
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+import pystray
+from PIL import Image, ImageDraw
+import io
 
 load_dotenv()
 
@@ -51,14 +54,92 @@ class SimpleStupidGrammar:
         self.setup_ui()
         self.is_running = False
         self.hotkey_thread = None
+        self.tray_icon = None
+        self.hidden = False
+        
+        # Create system tray icon
+        self.setup_tray()
+        
         # Auto-start monitoring
         self.root.after(100, self.start_monitoring)
+
+    def create_tray_icon(self):
+        """Create a simple icon for the system tray"""
+        # Create a simple icon using PIL
+        width = 64
+        height = 64
+        
+        # Create an image with transparent background
+        image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        
+        # Draw a simple "G" icon for Grammar
+        draw.rectangle([10, 10, width-10, height-10], fill='blue', outline='darkblue', width=2)
+        draw.text((width//2-8, height//2-8), "G", fill='white', font_size=24)
+        
+        return image
+
+    def setup_tray(self):
+        """Setup system tray icon"""
+        icon_image = self.create_tray_icon()
+        
+        # Create context menu for tray icon
+        menu = pystray.Menu(
+            pystray.MenuItem("Show Window", self.show_window),
+            pystray.MenuItem("Hide Window", self.hide_window),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Start Monitoring", self.start_monitoring, enabled=lambda item: not self.is_running),
+            pystray.MenuItem("Stop Monitoring", self.stop_monitoring, enabled=lambda item: self.is_running),
+            pystray.MenuItem("Restart Monitoring", self.restart_monitoring),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Exit", self.quit_app)
+        )
+        
+        self.tray_icon = pystray.Icon("SimpleStupidGrammar", icon_image, "Simple Stupid Grammar", menu)
+        
+        # Start tray icon in a separate thread
+        self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+        self.tray_thread.start()
+
+    def show_window(self, icon=None, item=None):
+        """Show the main window"""
+        self.root.deiconify()
+        self.root.lift()
+        self.root.attributes('-topmost', True)
+        self.root.after_idle(self.root.attributes, '-topmost', False)
+        self.hidden = False
+
+    def hide_window(self, icon=None, item=None):
+        """Hide the main window to system tray"""
+        self.root.withdraw()
+        self.hidden = True
+
+    def minimize_to_tray(self):
+        """Minimize to system tray instead of taskbar"""
+        self.hide_window()
 
     def setup_ui(self):
         """Setup the application UI"""
         self.root.title("Simple Stupid Grammar")
         self.root.geometry("600x500")
         self.root.resizable(True, True)
+        
+        # Set window icon (optional)
+        try:
+            # Convert PIL image to PhotoImage for tkinter
+            icon_image = self.create_tray_icon()
+            icon_image = icon_image.resize((32, 32))
+            
+            # Convert to bytes for tkinter
+            with io.BytesIO() as output:
+                icon_image.save(output, format="PNG")
+                icon_data = output.getvalue()
+            
+            # This might not work on all systems, so we'll try/except it
+            photo = tk.PhotoImage(data=icon_data)
+            self.root.iconphoto(False, photo)
+        except:
+            pass  # If icon setting fails, just continue without it
 
         # Main frame
         main_frame = ttk.Frame(self.root, padding="10")
@@ -88,7 +169,12 @@ class SimpleStupidGrammar:
         self.restart_button = ttk.Button(
             button_frame, text="Restart Monitoring", command=self.restart_monitoring
         )
-        self.restart_button.grid(row=0, column=0)
+        self.restart_button.grid(row=0, column=0, padx=(0, 10))
+
+        self.hide_button = ttk.Button(
+            button_frame, text="Hide to Tray", command=self.hide_window
+        )
+        self.hide_button.grid(row=0, column=1)
 
         # Instructions
         instructions_frame = ttk.LabelFrame(
@@ -104,6 +190,8 @@ class SimpleStupidGrammar:
 3. Press {KEYBOARD_HOTKEY} to fix grammar
 4. The highlighted text will be replaced with corrected version
 5. Use 'Restart Monitoring' to reset if needed
+6. Click 'Hide to Tray' or close window to run in background
+7. Right-click tray icon for options
 
 Current hotkey: {KEYBOARD_HOTKEY}"""
 
@@ -129,8 +217,36 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
-        # Bind close event
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        # Bind close event to minimize to tray instead of closing
+        self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
+        
+        # Bind minimize event
+        self.root.bind('<Unmap>', self.on_minimize)
+
+    def on_minimize(self, event):
+        """Handle window minimize event"""
+        if event.widget == self.root and self.root.state() == 'iconic':
+            self.minimize_to_tray()
+
+    def on_window_close(self):
+        """Handle window close event - minimize to tray instead of exiting"""
+        if messagebox.askyesno("Hide to Tray", 
+                              "Do you want to hide the application to the system tray?\n\n"
+                              "Click 'Yes' to hide to tray (app keeps running)\n"
+                              "Click 'No' to completely exit the application"):
+            self.hide_window()
+        else:
+            self.quit_app()
+
+    def quit_app(self, icon=None, item=None):
+        """Completely exit the application"""
+        if self.is_running:
+            self.stop_monitoring()
+        if self.tray_icon:
+            self.tray_icon.stop()
+        self.root.quit()
+        self.root.destroy()
+        sys.exit(0)
 
     def log_message(self, message):
         """Add message to UI log"""
@@ -140,19 +256,26 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         # Log to console
         logging.info(message)
 
-        # Update UI log
-        self.log_text.insert(tk.END, formatted_message + "\n")
-        self.log_text.see(tk.END)
-        self.root.update_idletasks()
+        # Update UI log only if window exists and is not destroyed
+        try:
+            if self.root and self.root.winfo_exists():
+                self.log_text.insert(tk.END, formatted_message + "\n")
+                self.log_text.see(tk.END)
+                self.root.update_idletasks()
+        except tk.TclError:
+            pass  # Window might be destroyed, just continue
 
-    def start_monitoring(self):
+    def start_monitoring(self, icon=None, item=None):
         """Start the hotkey monitoring"""
         if self.is_running:
             return
 
         self.is_running = True
-        self.restart_button.config(state="disabled")
-        self.status_label.config(text="Running", foreground="green")
+        try:
+            self.restart_button.config(state="disabled")
+            self.status_label.config(text="Running", foreground="green")
+        except tk.TclError:
+            pass  # Window might be hidden
 
         self.log_message(f"Started monitoring for {KEYBOARD_HOTKEY}")
 
@@ -160,20 +283,23 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         self.hotkey_thread = threading.Thread(target=self.monitor_hotkey, daemon=True)
         self.hotkey_thread.start()
 
-    def restart_monitoring(self):
+    def restart_monitoring(self, icon=None, item=None):
         """Restart the hotkey monitoring"""
         if self.is_running:
             self.stop_monitoring()
         self.start_monitoring()
 
-    def stop_monitoring(self):
+    def stop_monitoring(self, icon=None, item=None):
         """Stop the hotkey monitoring"""
         if not self.is_running:
             return
 
         self.is_running = False
-        self.restart_button.config(state="normal")
-        self.status_label.config(text="Stopped", foreground="red")
+        try:
+            self.restart_button.config(state="normal")
+            self.status_label.config(text="Stopped", foreground="red")
+        except tk.TclError:
+            pass  # Window might be hidden
 
         self.log_message("Stopped monitoring")
 
@@ -279,15 +405,22 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         return corrected
 
     def on_closing(self):
-        """Handle application closing"""
-        if self.is_running:
-            self.stop_monitoring()
-        self.root.destroy()
+        """Handle application closing (deprecated - use quit_app instead)"""
+        self.quit_app()
 
     def run(self):
         """Start the application"""
         self.log_message("Simple Stupid Grammar started")
         self.log_message("Monitoring will start automatically...")
+        self.log_message("You can minimize this window to system tray")
+        
+        # Show initial notification
+        try:
+            if self.tray_icon:
+                self.tray_icon.notify("Simple Stupid Grammar is running!", "The app is ready to correct your grammar!")
+        except:
+            pass
+            
         self.root.mainloop()
 
 
