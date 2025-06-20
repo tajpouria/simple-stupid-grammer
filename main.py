@@ -38,21 +38,28 @@ PROMPT = "Make the following text grammatically correct: "
 
 class SimpleStupidGrammar:
     def __init__(self):
-        self.root = tk.Tk()
-        self.setup_ui()
-        self.is_running = False
-        self.hotkey_thread = None
-        self.tray_icon = None
-        self.hidden = True  # Start hidden by default
-        
-        # Hide the window immediately on startup
-        self.root.withdraw()
-        
-        # Create system tray icon
-        self.setup_tray()
-        
-        # Auto-start monitoring
-        self.root.after(100, self.start_monitoring)
+        try:
+            self.root = tk.Tk()
+            self.setup_ui()
+            self.is_running = False
+            self.hotkey_thread = None
+            self.tray_icon = None
+            self.hidden = False  # Start visible by default
+            
+            # Keep the window visible on startup
+            # self.root.withdraw()  # Removed - keep window visible
+            
+            # Create system tray icon
+            self.setup_tray()
+            
+            # Auto-start monitoring
+            self.root.after(100, self.start_monitoring)
+            
+        except Exception as e:
+            print(f"ERROR: Failed to initialize application: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def create_tray_icon(self):
         """Create a simple icon for the system tray"""
@@ -78,8 +85,6 @@ class SimpleStupidGrammar:
         menu = pystray.Menu(
             pystray.MenuItem("Show Window", self.show_window),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Start Monitoring", self.start_monitoring, enabled=lambda item: not self.is_running),
-            pystray.MenuItem("Stop Monitoring", self.stop_monitoring, enabled=lambda item: self.is_running),
             pystray.MenuItem("Restart Monitoring", self.restart_monitoring),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Exit", self.quit_app)
@@ -156,11 +161,6 @@ class SimpleStupidGrammar:
             button_frame, text="Restart Monitoring", command=self.restart_monitoring
         )
         self.restart_button.grid(row=0, column=0, padx=(0, 10))
-
-        self.hide_button = ttk.Button(
-            button_frame, text="Hide to Tray", command=self.hide_window
-        )
-        self.hide_button.grid(row=0, column=1)
 
         # Instructions
         instructions_frame = ttk.LabelFrame(
@@ -373,9 +373,24 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
 
 if __name__ == "__main__":
     try:
+        # Check if Google API key is available
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            print("ERROR: GOOGLE_API_KEY not found in environment variables!")
+            print("Please create a .env file with your Google API key:")
+            print("GOOGLE_API_KEY=your_api_key_here")
+            input("Press Enter to exit...")
+            sys.exit(1)
+            
         app = SimpleStupidGrammar()
         app.run()
     except KeyboardInterrupt:
+        print("Application interrupted by user")
         sys.exit(0)
     except Exception as e:
+        print(f"ERROR: Application failed to start: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        input("Press Enter to exit...")
         sys.exit(1)
