@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Simple Stupid Grammar - Windows Desktop App
-A system-wide grammar correction tool that fixes highlighted text.
+Simple Stupid Grammar - Windows Background App
+A system-wide grammar correction tool that runs in the system tray.
 """
 
 import os
@@ -9,10 +9,8 @@ import threading
 import time
 import json
 import sys
-import logging
-from datetime import datetime
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import ttk, messagebox
 import keyboard
 import pyperclip
 import pyautogui
@@ -38,16 +36,6 @@ MODEL = "models/gemini-2.0-flash-lite"
 PROMPT = "Make the following text grammatically correct: "
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-    ],
-)
-
-
 class SimpleStupidGrammar:
     def __init__(self):
         self.root = tk.Tk()
@@ -55,7 +43,10 @@ class SimpleStupidGrammar:
         self.is_running = False
         self.hotkey_thread = None
         self.tray_icon = None
-        self.hidden = False
+        self.hidden = True  # Start hidden by default
+        
+        # Hide the window immediately on startup
+        self.root.withdraw()
         
         # Create system tray icon
         self.setup_tray()
@@ -86,7 +77,6 @@ class SimpleStupidGrammar:
         # Create context menu for tray icon
         menu = pystray.Menu(
             pystray.MenuItem("Show Window", self.show_window),
-            pystray.MenuItem("Hide Window", self.hide_window),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Start Monitoring", self.start_monitoring, enabled=lambda item: not self.is_running),
             pystray.MenuItem("Stop Monitoring", self.stop_monitoring, enabled=lambda item: self.is_running),
@@ -114,14 +104,10 @@ class SimpleStupidGrammar:
         self.root.withdraw()
         self.hidden = True
 
-    def minimize_to_tray(self):
-        """Minimize to system tray instead of taskbar"""
-        self.hide_window()
-
     def setup_ui(self):
         """Setup the application UI"""
         self.root.title("Simple Stupid Grammar")
-        self.root.geometry("600x500")
+        self.root.geometry("500x300")
         self.root.resizable(True, True)
         
         # Set window icon (optional)
@@ -181,62 +167,34 @@ class SimpleStupidGrammar:
             main_frame, text="Instructions", padding="10"
         )
         instructions_frame.grid(
-            row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10)
+            row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10)
         )
 
         instructions_text = f"""How to use:
-1. App starts monitoring automatically
+1. App runs in background by default (check system tray)
 2. Highlight any text anywhere on your computer
 3. Press {KEYBOARD_HOTKEY} to fix grammar
 4. The highlighted text will be replaced with corrected version
-5. Use 'Restart Monitoring' to reset if needed
-6. Click 'Hide to Tray' or close window to run in background
-7. Right-click tray icon for options
+5. Right-click tray icon for options
+6. This window is only for monitoring - app works in background
 
 Current hotkey: {KEYBOARD_HOTKEY}"""
 
         instructions_label = ttk.Label(
             instructions_frame, text=instructions_text, justify=tk.LEFT
         )
-        instructions_label.grid(row=0, column=0, sticky=tk.W)
-
-        # Log display
-        log_frame = ttk.LabelFrame(main_frame, text="Activity Log", padding="10")
-        log_frame.grid(
-            row=4, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10)
-        )
-
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=10, width=70)
-        self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        instructions_label.grid(row=0, column=0, sticky=(tk.W, tk.N))
 
         # Configure grid weights for resizing
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(4, weight=1)
-        log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
+        main_frame.rowconfigure(3, weight=1)
+        instructions_frame.columnconfigure(0, weight=1)
+        instructions_frame.rowconfigure(0, weight=1)
 
-        # Bind close event to minimize to tray instead of closing
-        self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
-        
-        # Bind minimize event
-        self.root.bind('<Unmap>', self.on_minimize)
-
-    def on_minimize(self, event):
-        """Handle window minimize event"""
-        if event.widget == self.root and self.root.state() == 'iconic':
-            self.minimize_to_tray()
-
-    def on_window_close(self):
-        """Handle window close event - minimize to tray instead of exiting"""
-        if messagebox.askyesno("Hide to Tray", 
-                              "Do you want to hide the application to the system tray?\n\n"
-                              "Click 'Yes' to hide to tray (app keeps running)\n"
-                              "Click 'No' to completely exit the application"):
-            self.hide_window()
-        else:
-            self.quit_app()
+        # Bind close event to hide window
+        self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
 
     def quit_app(self, icon=None, item=None):
         """Completely exit the application"""
@@ -247,23 +205,6 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         self.root.quit()
         self.root.destroy()
         sys.exit(0)
-
-    def log_message(self, message):
-        """Add message to UI log"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        formatted_message = f"[{timestamp}] {message}"
-
-        # Log to console
-        logging.info(message)
-
-        # Update UI log only if window exists and is not destroyed
-        try:
-            if self.root and self.root.winfo_exists():
-                self.log_text.insert(tk.END, formatted_message + "\n")
-                self.log_text.see(tk.END)
-                self.root.update_idletasks()
-        except tk.TclError:
-            pass  # Window might be destroyed, just continue
 
     def start_monitoring(self, icon=None, item=None):
         """Start the hotkey monitoring"""
@@ -277,7 +218,12 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         except tk.TclError:
             pass  # Window might be hidden
 
-        self.log_message(f"Started monitoring for {KEYBOARD_HOTKEY}")
+        # Show notification
+        try:
+            if self.tray_icon:
+                self.tray_icon.notify("Simple Stupid Grammar", f"Monitoring started! Press {KEYBOARD_HOTKEY} to fix grammar.")
+        except:
+            pass
 
         # Start hotkey monitoring in separate thread
         self.hotkey_thread = threading.Thread(target=self.monitor_hotkey, daemon=True)
@@ -301,7 +247,12 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         except tk.TclError:
             pass  # Window might be hidden
 
-        self.log_message("Stopped monitoring")
+        # Show notification
+        try:
+            if self.tray_icon:
+                self.tray_icon.notify("Simple Stupid Grammar", "Monitoring stopped.")
+        except:
+            pass
 
         # Unhook the hotkey
         try:
@@ -313,23 +264,23 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         """Monitor for the grammar correction hotkey"""
         try:
             # Register the hotkey
-            self.log_message(f"Registering hotkey: {KEYBOARD_HOTKEY}")
             keyboard.add_hotkey(KEYBOARD_HOTKEY, self.fix_grammar)
-            self.log_message("Hotkey registered successfully!")
 
             # Keep the thread alive while monitoring
             while self.is_running:
                 time.sleep(0.1)
 
         except Exception as e:
-            self.log_message(f"Error in hotkey monitoring: {str(e)}")
-            self.log_message("Try running the app as Administrator!")
+            # Show error notification instead of logging
+            try:
+                if self.tray_icon:
+                    self.tray_icon.notify("Error", f"Hotkey error: {str(e)}. Try running as Administrator!")
+            except:
+                pass
 
     def fix_grammar(self):
         """Main function to fix grammar of highlighted text"""
         try:
-            self.log_message("SUCCESS: Grammar fix hotkey pressed!")
-
             # Store current clipboard content to restore later
             original_clipboard = ""
             try:
@@ -345,19 +296,13 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
             try:
                 highlighted_text = pyperclip.paste()
             except Exception as e:
-                self.log_message(f"Error getting clipboard content: {str(e)}")
                 return
 
             if not highlighted_text or highlighted_text.strip() == "":
-                self.log_message("No text was highlighted or copied")
                 return
 
-            self.log_message(f"Captured text: '{highlighted_text}'")
-
-            # For now, apply simple corrections and add placeholder text
+            # Apply corrections
             corrected_text = self.apply_corrections(highlighted_text)
-
-            self.log_message(f"Corrected text: '{corrected_text}'")
 
             # Replace the highlighted text
             pyperclip.copy(corrected_text)
@@ -374,10 +319,20 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
 
             threading.Thread(target=restore_clipboard, daemon=True).start()
 
-            self.log_message("Text replacement completed!")
+            # Show notification
+            try:
+                if self.tray_icon:
+                    self.tray_icon.notify("Grammar Fixed!", "Text has been corrected and replaced.")
+            except:
+                pass
 
         except Exception as e:
-            self.log_message(f"Error during grammar fix: {str(e)}")
+            # Show error notification instead of logging
+            try:
+                if self.tray_icon:
+                    self.tray_icon.notify("Error", f"Grammar fix failed: {str(e)}")
+            except:
+                pass
 
     def apply_corrections(self, text):
         """Apply grammar corrections to the text"""
@@ -404,20 +359,12 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
 
         return corrected
 
-    def on_closing(self):
-        """Handle application closing (deprecated - use quit_app instead)"""
-        self.quit_app()
-
     def run(self):
-        """Start the application"""
-        self.log_message("Simple Stupid Grammar started")
-        self.log_message("Monitoring will start automatically...")
-        self.log_message("You can minimize this window to system tray")
-        
+        """Start the application"""        
         # Show initial notification
         try:
             if self.tray_icon:
-                self.tray_icon.notify("Simple Stupid Grammar is running!", "The app is ready to correct your grammar!")
+                self.tray_icon.notify("Simple Stupid Grammar Started!", "App is running in background. Right-click tray icon for options.")
         except:
             pass
             
@@ -429,8 +376,6 @@ if __name__ == "__main__":
         app = SimpleStupidGrammar()
         app.run()
     except KeyboardInterrupt:
-        print("Application interrupted by user")
         sys.exit(0)
     except Exception as e:
-        print(f"Fatal error: {str(e)}")
         sys.exit(1)
