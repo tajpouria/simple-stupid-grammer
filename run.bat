@@ -1,0 +1,3 @@
+@echo off
+echo Starting Simple Stupid Grammar...
+python main.py 
