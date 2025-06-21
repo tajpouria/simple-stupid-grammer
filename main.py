@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-Simple Stupid Grammar - Windows Background App
+Simple Stupid Grammar - Cross-Platform Background App
 A system-wide grammar correction tool that runs in the system tray.
+Supports Windows and macOS.
 """
 
 import os
+import platform
 import threading
 import time
 import json
@@ -22,6 +24,12 @@ import io
 import keyring
 
 
+# Platform detection
+PLATFORM = platform.system().lower()
+IS_WINDOWS = PLATFORM == "windows"
+IS_MACOS = PLATFORM == "darwin"
+IS_LINUX = PLATFORM == "linux"
+
 # Application constants
 SERVICE_NAME = "SimpleStupidGrammar"
 CREDENTIAL_NAME = "GoogleAPIKey"
@@ -32,6 +40,13 @@ CREDENTIAL_NAME = "GoogleAPIKey"
 KEYBOARD_HOTKEY = "f9"  # Alternative 3
 # KEYBOARD_HOTKEY = "ctrl+alt+0"
 
+# Platform-specific hotkey shortcuts for copy/paste
+if IS_MACOS:
+    COPY_HOTKEY = ("cmd", "c")
+    PASTE_HOTKEY = ("cmd", "v")
+else:
+    COPY_HOTKEY = ("ctrl", "c")
+    PASTE_HOTKEY = ("ctrl", "v")
 
 MODEL = "models/gemini-2.0-flash-lite"
 PROMPT = "Make the following text grammatically correct: "
@@ -40,7 +55,12 @@ PROMPT = "Make the following text grammatically correct: "
 class SimpleStupidGrammar:
     def __init__(self):
         try:
-            print("Starting app initialization...")
+            print(f"Starting app initialization on {PLATFORM}...")
+            
+            # Check platform compatibility
+            if not (IS_WINDOWS or IS_MACOS):
+                print(f"WARNING: Platform {PLATFORM} is not officially supported. Proceeding anyway...")
+            
             # Get Google API key before initializing the client
             api_key = self.get_google_api_key()
             print(f"Got API key: {'Yes' if api_key else 'No'}")
@@ -121,9 +141,10 @@ class SimpleStupidGrammar:
                 # Store the key securely
                 try:
                     keyring.set_password(SERVICE_NAME, CREDENTIAL_NAME, api_key)
+                    storage_location = "Keychain" if IS_MACOS else "Credential Manager" if IS_WINDOWS else "system keyring"
                     messagebox.showinfo(
                         "Success", 
-                        "API key saved successfully!\n"
+                        f"API key saved successfully to {storage_location}!\n"
                         "The app will remember this key for future use.",
                         parent=parent
                     )
@@ -218,7 +239,7 @@ class SimpleStupidGrammar:
     def setup_ui(self):
         """Setup the application UI"""
         self.root.title("Simple Stupid Grammar")
-        self.root.geometry("600x600")
+        self.root.geometry("600x700")
         self.root.resizable(True, True)
         
         # Set window icon (optional)
@@ -246,12 +267,19 @@ class SimpleStupidGrammar:
         title_label = ttk.Label(
             main_frame, text="Simple Stupid Grammar", font=("Arial", 16, "bold")
         )
-        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 10))
+        
+        # Platform info
+        platform_label = ttk.Label(
+            main_frame, text=f"Running on: {platform.system()} {platform.release()}", 
+            font=("Arial", 10), foreground="gray"
+        )
+        platform_label.grid(row=1, column=0, columnspan=2, pady=(0, 20))
 
         # Status frame
         status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
         status_frame.grid(
-            row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10)
+            row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10)
         )
 
         self.status_label = ttk.Label(
@@ -261,30 +289,44 @@ class SimpleStupidGrammar:
 
         # Control buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, columnspan=2, pady=(0, 20))
+        button_frame.grid(row=3, column=0, columnspan=2, pady=(0, 20))
 
         self.restart_button = ttk.Button(
             button_frame, text="Restart Monitoring", command=self.restart_monitoring
         )
         self.restart_button.grid(row=0, column=0, padx=(0, 10))
 
-        # Instructions
+        # Platform-specific instructions
         instructions_frame = ttk.LabelFrame(
             main_frame, text="Instructions", padding="10"
         )
         instructions_frame.grid(
-            row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10)
+            row=4, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10)
         )
 
+        copy_shortcut = "Cmd+C" if IS_MACOS else "Ctrl+C"
+        paste_shortcut = "Cmd+V" if IS_MACOS else "Ctrl+V"
+        
         instructions_text = f"""How to use:
-1. App runs in background by default (check system tray)
+1. App runs in background by default (check system tray/menu bar)
 2. Highlight any text anywhere on your computer
 3. Press {KEYBOARD_HOTKEY} to fix grammar
 4. The highlighted text will be replaced with corrected version
 5. Right-click tray icon for options
 6. This window is only for monitoring - app works in background
 
-Current hotkey: {KEYBOARD_HOTKEY}"""
+Current hotkey: {KEYBOARD_HOTKEY}
+Copy shortcut: {copy_shortcut}
+Paste shortcut: {paste_shortcut}"""
+
+        if IS_MACOS:
+            instructions_text += """
+
+macOS Notes:
+• You may need to grant accessibility permissions
+• Go to System Preferences > Security & Privacy > Privacy
+• Select 'Accessibility' and add Terminal/Python to the list
+• Some applications may require additional permissions"""
 
         instructions_label = ttk.Label(
             instructions_frame, text=instructions_text, justify=tk.LEFT
@@ -295,7 +337,7 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(3, weight=1)
+        main_frame.rowconfigure(4, weight=1)
         instructions_frame.columnconfigure(0, weight=1)
         instructions_frame.rowconfigure(0, weight=1)
 
@@ -380,7 +422,12 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
             # Show error notification instead of logging
             try:
                 if self.tray_icon:
-                    self.tray_icon.notify("Error", f"Hotkey error: {str(e)}. Try running as Administrator!")
+                    error_msg = f"Hotkey error: {str(e)}."
+                    if IS_MACOS:
+                        error_msg += " Grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility."
+                    elif IS_WINDOWS:
+                        error_msg += " Try running as Administrator!"
+                    self.tray_icon.notify("Error", error_msg)
             except:
                 pass
 
@@ -394,8 +441,8 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
             except:
                 pass
 
-            # Copy highlighted text to clipboard
-            pyautogui.hotkey("ctrl", "c")
+            # Copy highlighted text to clipboard using platform-specific shortcut
+            pyautogui.hotkey(*COPY_HOTKEY)
             time.sleep(0.1)  # Small delay to ensure copy completes
 
             # Get the highlighted text
@@ -410,10 +457,10 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
             # Apply corrections
             corrected_text = self.apply_corrections(highlighted_text)
 
-            # Replace the highlighted text
+            # Replace the highlighted text using platform-specific shortcut
             pyperclip.copy(corrected_text)
             time.sleep(0.1)  # Slightly longer delay to ensure clipboard is ready
-            pyautogui.hotkey("ctrl", "v")
+            pyautogui.hotkey(*PASTE_HOTKEY)
 
             # Restore original clipboard after a delay
             def restore_clipboard():
@@ -436,7 +483,10 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
             # Show error notification instead of logging
             try:
                 if self.tray_icon:
-                    self.tray_icon.notify("Error", f"Grammar fix failed: {str(e)}")
+                    permission_msg = ""
+                    if IS_MACOS:
+                        permission_msg = " Check accessibility permissions in System Preferences."
+                    self.tray_icon.notify("Error", f"Grammar fix failed: {str(e)}{permission_msg}")
             except:
                 pass
 
