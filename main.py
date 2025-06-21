@@ -13,7 +13,6 @@ import json
 import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
-import keyboard
 import pyperclip
 import pyautogui
 from google import genai
@@ -22,6 +21,32 @@ import pystray
 from PIL import Image, ImageDraw
 import io
 import keyring
+
+# Try to import keyboard libraries with fallback
+KEYBOARD_LIB = None
+
+# On macOS, prefer pynput since keyboard library has issues
+if platform.system().lower() == "darwin":
+    try:
+        from pynput import keyboard as pynput_keyboard
+        from pynput.keyboard import Key, Listener
+        KEYBOARD_LIB = "pynput"
+        print("Using pynput library for macOS compatibility")
+    except ImportError:
+        print("pynput not available, trying keyboard library...")
+
+# Fallback to keyboard library if pynput not available
+if KEYBOARD_LIB is None:
+    try:
+        import keyboard
+        KEYBOARD_LIB = "keyboard"
+        print("Using keyboard library")
+    except ImportError:
+        print("ERROR: Neither pynput nor keyboard library is available!")
+        print("Please install one of them:")
+        print("  pip3 install pynput  (recommended for macOS)")
+        print("  pip3 install keyboard  (for Windows/Linux)")
+        sys.exit(1)
 
 
 # Platform detection
@@ -56,6 +81,7 @@ class SimpleStupidGrammar:
     def __init__(self):
         try:
             print(f"Starting app initialization on {PLATFORM}...")
+            print(f"Using keyboard library: {KEYBOARD_LIB}")
             
             # Check platform compatibility
             if not (IS_WINDOWS or IS_MACOS):
@@ -79,6 +105,7 @@ class SimpleStupidGrammar:
             self.hotkey_thread = None
             self.tray_icon = None
             self.hidden = False  # Start visible by default
+            self.pynput_listener = None  # For pynput keyboard listener
             
             # Keep the window visible on startup
             # self.root.withdraw()  # Removed - keep window visible
@@ -307,6 +334,8 @@ class SimpleStupidGrammar:
         copy_shortcut = "Cmd+C" if IS_MACOS else "Ctrl+C"
         paste_shortcut = "Cmd+V" if IS_MACOS else "Ctrl+V"
         
+        keyboard_lib_info = f"Using: {KEYBOARD_LIB} library"
+        
         instructions_text = f"""How to use:
 1. App runs in background by default (check system tray/menu bar)
 2. Highlight any text anywhere on your computer
@@ -317,16 +346,26 @@ class SimpleStupidGrammar:
 
 Current hotkey: {KEYBOARD_HOTKEY}
 Copy shortcut: {copy_shortcut}
-Paste shortcut: {paste_shortcut}"""
+Paste shortcut: {paste_shortcut}
+{keyboard_lib_info}"""
 
         if IS_MACOS:
-            instructions_text += """
+            instructions_text += f"""
 
 macOS Notes:
 • You may need to grant accessibility permissions
 • Go to System Preferences > Security & Privacy > Privacy
 • Select 'Accessibility' and add Terminal/Python to the list
 • Some applications may require additional permissions"""
+            
+            if KEYBOARD_LIB == "pynput":
+                instructions_text += """
+• Using pynput library for better macOS compatibility
+• If hotkey doesn't work, try granting accessibility permissions"""
+            elif KEYBOARD_LIB == "keyboard":
+                instructions_text += """
+• Using keyboard library - may need sudo for some systems
+• If hotkey fails, try: sudo python3 main.py"""
 
         instructions_label = ttk.Label(
             instructions_frame, text=instructions_text, justify=tk.LEFT
@@ -402,21 +441,53 @@ macOS Notes:
         except:
             pass
 
-        # Unhook the hotkey
+        # Unhook the hotkey based on library
         try:
-            keyboard.unhook_all_hotkeys()
+            if KEYBOARD_LIB == "keyboard":
+                keyboard.unhook_all_hotkeys()
+            elif KEYBOARD_LIB == "pynput" and self.pynput_listener:
+                self.pynput_listener.stop()
+                self.pynput_listener = None
         except:
             pass
+
+    def _pynput_on_press(self, key):
+        """Handle pynput key press events"""
+        try:
+            # Check for F9 key
+            if hasattr(key, 'name') and key.name == 'f9':
+                self.fix_grammar()
+            elif key == pynput_keyboard.Key.f9:
+                self.fix_grammar()
+        except AttributeError:
+            # Handle special keys that might not have name attribute
+            pass
+        except Exception as e:
+            print(f"Error in pynput key handler: {e}")
 
     def monitor_hotkey(self):
         """Monitor for the grammar correction hotkey"""
         try:
-            # Register the hotkey
-            keyboard.add_hotkey(KEYBOARD_HOTKEY, self.fix_grammar)
-
-            # Keep the thread alive while monitoring
-            while self.is_running:
-                time.sleep(0.1)
+            if KEYBOARD_LIB == "keyboard":
+                # Use keyboard library
+                keyboard.add_hotkey(KEYBOARD_HOTKEY, self.fix_grammar)
+                
+                # Keep the thread alive while monitoring
+                while self.is_running:
+                    time.sleep(0.1)
+                    
+            elif KEYBOARD_LIB == "pynput":
+                # Use pynput library
+                print("Starting pynput keyboard listener...")
+                self.pynput_listener = Listener(on_press=self._pynput_on_press)
+                self.pynput_listener.start()
+                
+                # Keep the thread alive while monitoring
+                while self.is_running:
+                    time.sleep(0.1)
+                    
+                if self.pynput_listener:
+                    self.pynput_listener.stop()
 
         except Exception as e:
             # Show error notification instead of logging
@@ -425,6 +496,8 @@ macOS Notes:
                     error_msg = f"Hotkey error: {str(e)}."
                     if IS_MACOS:
                         error_msg += " Grant accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility."
+                        if KEYBOARD_LIB == "keyboard":
+                            error_msg += " You may also try running with 'sudo python3 main.py' if accessibility permissions don't work."
                     elif IS_WINDOWS:
                         error_msg += " Try running as Administrator!"
                     self.tray_icon.notify("Error", error_msg)

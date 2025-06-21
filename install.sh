@@ -13,11 +13,21 @@ fi
 
 echo "Python 3 found. Installing dependencies..."
 
-# Install dependencies
-if ! python3 -m pip install -r requirements.txt; then
-    echo "ERROR: Failed to install dependencies"
-    echo "You may need to install pip first: python3 -m ensurepip --upgrade"
-    exit 1
+# Install dependencies using macOS-specific requirements
+if [ -f "requirements-macos.txt" ]; then
+    echo "Using macOS-specific requirements..."
+    if ! python3 -m pip install -r requirements-macos.txt; then
+        echo "ERROR: Failed to install dependencies"
+        echo "You may need to install pip first: python3 -m ensurepip --upgrade"
+        exit 1
+    fi
+else
+    echo "macOS requirements file not found, using general requirements..."
+    if ! python3 -m pip install -r requirements.txt; then
+        echo "ERROR: Failed to install dependencies"
+        echo "You may need to install pip first: python3 -m ensurepip --upgrade"
+        exit 1
+    fi
 fi
 
 echo ""
