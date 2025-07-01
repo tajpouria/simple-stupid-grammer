@@ -32,7 +32,6 @@ CREDENTIAL_NAME = "GoogleAPIKey"
 KEYBOARD_HOTKEY = "f9"  # Alternative 3
 # KEYBOARD_HOTKEY = "ctrl+alt+0"
 
-
 MODEL = "models/gemini-2.0-flash-lite"
 PROMPT = "Make the following text grammatically correct: "
 
