@@ -4,7 +4,6 @@ Simple Stupid Grammar - Windows Background App
 A system-wide grammar correction tool that runs in the system tray.
 """
 
-import os
 import threading
 import time
 import json
@@ -393,9 +392,13 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
             except:
                 pass
 
-            # Copy highlighted text to clipboard
-            pyautogui.hotkey("ctrl", "c")
-            time.sleep(0.1)  # Small delay to ensure copy completes
+            # Copy highlighted text to clipboard (use appropriate modifier key for platform)
+            if sys.platform == "darwin":  # macOS
+                pyautogui.hotkey("cmd", "c")
+            else:  # Windows/Linux
+                pyautogui.hotkey("ctrl", "c")
+            # Longer delay on macOS as it can be slower with clipboard operations
+            time.sleep(0.2 if sys.platform == "darwin" else 0.1)
 
             # Get the highlighted text
             try:
@@ -411,8 +414,12 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
 
             # Replace the highlighted text
             pyperclip.copy(corrected_text)
-            time.sleep(0.1)  # Slightly longer delay to ensure clipboard is ready
-            pyautogui.hotkey("ctrl", "v")
+            # Longer delay on macOS to ensure clipboard is ready
+            time.sleep(0.2 if sys.platform == "darwin" else 0.1)
+            if sys.platform == "darwin":  # macOS
+                pyautogui.hotkey("cmd", "v")
+            else:  # Windows/Linux
+                pyautogui.hotkey("ctrl", "v")
 
             # Restore original clipboard after a delay
             def restore_clipboard():
