@@ -384,6 +384,9 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
 
     def fix_grammar(self):
         """Main function to fix grammar of highlighted text"""
+        print("Hotkey received! Starting grammar correction...")
+        time.sleep(1)  # One second delay after hotkey received
+        
         try:
             # Store current clipboard content to restore later
             original_clipboard = ""
@@ -392,13 +395,50 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
             except:
                 pass
 
-            # Copy highlighted text to clipboard (use appropriate modifier key for platform)
-            if sys.platform == "darwin":  # macOS
-                pyautogui.hotkey("cmd", "c")
-            else:  # Windows/Linux
-                pyautogui.hotkey("ctrl", "c")
-            # Longer delay on macOS as it can be slower with clipboard operations
-            time.sleep(0.2 if sys.platform == "darwin" else 0.1)
+            # Copy highlighted text to clipboard - try multiple methods
+            success = False
+            
+            # Method 1: keyboard library
+            try:
+                if sys.platform == "darwin":  # macOS
+                    keyboard.send('cmd+c')
+                else:  # Windows/Linux
+                    keyboard.send('ctrl+c')
+                time.sleep(0.3)
+                success = True
+            except:
+                pass
+            
+            # Method 2: If keyboard fails, try pyautogui with different approach
+            if not success:
+                try:
+                    if sys.platform == "darwin":  # macOS
+                        pyautogui.hotkey('command', 'c')
+                    else:  # Windows/Linux
+                        pyautogui.hotkey('ctrl', 'c')
+                    time.sleep(0.3)
+                    success = True
+                except:
+                    pass
+            
+            # Method 3: Last resort - use individual key presses with longer delays
+            if not success:
+                try:
+                    if sys.platform == "darwin":  # macOS
+                        pyautogui.keyDown('command')
+                        time.sleep(0.05)
+                        pyautogui.press('c')
+                        time.sleep(0.05)
+                        pyautogui.keyUp('command')
+                    else:  # Windows/Linux
+                        pyautogui.keyDown('ctrl')
+                        time.sleep(0.05)
+                        pyautogui.press('c')
+                        time.sleep(0.05)
+                        pyautogui.keyUp('ctrl')
+                    time.sleep(0.3)
+                except:
+                    pass
 
             # Get the highlighted text
             try:
@@ -406,20 +446,65 @@ Current hotkey: {KEYBOARD_HOTKEY}"""
             except Exception as e:
                 return
 
-            if not highlighted_text or highlighted_text.strip() == "":
+            if not highlighted_text or highlighted_text.strip() == "" or highlighted_text == original_clipboard:
+                # Show notification if no text was selected
+                try:
+                    if self.tray_icon:
+                        self.tray_icon.notify("No Text Selected", "Please highlight some text first, then press the hotkey.")
+                except:
+                    pass
                 return
 
             # Apply corrections
             corrected_text = self.apply_corrections(highlighted_text)
 
-            # Replace the highlighted text
+            print(f"Original text: {highlighted_text}")
+            print(f"Corrected text: {corrected_text}")
+
+            # Replace the highlighted text - try multiple methods
             pyperclip.copy(corrected_text)
-            # Longer delay on macOS to ensure clipboard is ready
-            time.sleep(0.2 if sys.platform == "darwin" else 0.1)
-            if sys.platform == "darwin":  # macOS
-                pyautogui.hotkey("cmd", "v")
-            else:  # Windows/Linux
-                pyautogui.hotkey("ctrl", "v")
+            time.sleep(0.3)  # Ensure clipboard is ready
+            
+            success = False
+            
+            # Method 1: keyboard library
+            try:
+                if sys.platform == "darwin":  # macOS
+                    keyboard.send('cmd+v')
+                else:  # Windows/Linux
+                    keyboard.send('ctrl+v')
+                success = True
+            except:
+                pass
+            
+            # Method 2: If keyboard fails, try pyautogui
+            if not success:
+                try:
+                    if sys.platform == "darwin":  # macOS
+                        pyautogui.hotkey('command', 'v')
+                    else:  # Windows/Linux
+                        pyautogui.hotkey('ctrl', 'v')
+                    success = True
+                except:
+                    pass
+            
+            # Method 3: Last resort
+            if not success:
+                try:
+                    if sys.platform == "darwin":  # macOS
+                        pyautogui.keyDown('command')
+                        time.sleep(0.05)
+                        pyautogui.press('v')
+                        time.sleep(0.05)
+                        pyautogui.keyUp('command')
+                    else:  # Windows/Linux
+                        pyautogui.keyDown('ctrl')
+                        time.sleep(0.05)
+                        pyautogui.press('v')
+                        time.sleep(0.05)
+                        pyautogui.keyUp('ctrl')
+                except:
+                    pass
 
             # Restore original clipboard after a delay
             def restore_clipboard():
